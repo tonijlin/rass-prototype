@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/><title>RASS! 1.0 — Journey Simulation Lab</title><link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet"/><style>
+*{box-sizing:border-box}body{margin:0;background:#0d151c;color:#f5f9fa;font:15px system-ui,Arial}header{padding:13px 16px;display:flex;justify-content:space-between;align-items:center}h1{margin:0;font-size:30px;font-style:italic}h1 span{color:#12c9b4}.sub,.muted{color:#abc1ca;font-size:12px}.badge{background:#1d4c46;border-radius:30px;color:#b8ffef;padding:7px;font-size:11px}#map{height:42vh;min-height:270px}.wrap{padding:13px 16px}.card{padding:13px;background:#1c303b;border-radius:14px;margin-bottom:10px}.warn{background:#563b30}.row{display:flex;justify-content:space-between;align-items:center;gap:12px}.title{font-weight:800;font-size:19px}.controls{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:12px 0}button{background:#28414c;color:white;border:0;border-radius:12px;padding:13px 9px;font-weight:750;font-size:14px}button.main{background:#10c8b1;color:#062d2a}button:disabled{opacity:.4}#report{width:100%;font-size:21px;padding:20px}input{width:100%;accent-color:#10c8b1}.hint{font-size:11px;color:#aabdc5;line-height:1.5}.teal{color:#79e8d8}#toast{min-height:20px;color:#7ce8d7;font-size:13px}.leaflet-control-attribution{font-size:9px!important}</style></head><body>
+<header><div><h1>RASS<span>!</span></h1><div class="sub">JUST DRIVE · PROTOTYPE 1.0</div></div><div class="badge">JOURNEY SIMULATION</div></header>
+<div id="map"></div><div class="wrap"><div class="controls"><button class="main" id="simMode">🛣 Simulator</button><button id="gpsMode">📍 Live GPS Test</button></div><div class="card" id="gpsPanel" style="display:none"><div class="title">Live GPS · No destination</div><p class="muted" id="gpsStatus">Location is off. Tap Start GPS to request permission.</p><div class="row"><span class="muted">Accuracy</span><b id="accuracy">—</b></div><div class="row"><span class="muted">Speed (device estimate)</span><b id="gpsSpeed">—</b></div><div class="controls"><button class="main" id="startGPS">Start GPS</button><button id="stopGPS">Stop GPS</button></div><p class="hint">Your coordinates stay in this browser session. No location history is saved or sent to GitHub. The map tile provider may receive map-area requests. GPS reports are test-only and are not published.</p><div class="card" id="roadMatchPanel" style="margin-top:10px"><b>Nearby mapped road · experimental</b><div class="muted" id="matchStatus" style="margin-top:7px">Start GPS to request a road lookup.</div><div class="muted" id="matchDetail"></div><div class="muted" id="motionStatus" style="margin-top:9px">Movement: waiting for GPS readings</div><div class="muted" id="directionStatus" style="margin-top:5px">Direction: unknown</div><div class="muted" id="confidenceStatus" style="margin-top:5px">Road confidence: unverified</div><p class="hint">This is a nearby-road candidate, not confirmed map matching or a safe basis for hazard warnings. Movement heading is estimated only after significant displacement beyond GPS uncertainty. Road lookup sends your current coordinates to the public OSRM demonstration service; you can disable it below.</p><label class="muted"><input id="matchConsent" style="width:auto" type="checkbox"/> Allow nearby-road lookups</label></div></div>
+<div class="card" id="labPanel"><div class="row"><b>🧪 Journey Intelligence Lab</b><label class="muted"><input id="labToggle" type="checkbox" style="width:auto"/> Enable</label></div><p class="hint">Simulated hazards only. Tests ahead / behind / nearby-road exclusion / damaged stretch on a predefined mapped route. Not live road matching.</p><div class="muted" id="labStatus">Enable lab in Simulator mode.</div><div class="muted" id="labCounts" style="margin-top:6px"></div></div><div class="card" id="alert"><div class="row"><div><div class="muted">NEXT ROAD ALERT</div><div class="title" id="name">Loading mapped roads…</div><div class="muted" id="meta">Routing service required</div></div><div class="title" id="dist">—</div></div><div class="muted" id="speech" style="margin-top:9px">Voice is on by default; tap Auto Drive or Start GPS to enable browser audio.</div></div>
+<div class="row" id="simSpeedRow"><span>Simulated speed</span><b id="speedtxt">50 km/h</b></div><input id="speed" max="100" min="20" step="10" style="" type="range" value="50"/>
+<div class="controls"><button class="main" id="voice">🔊 Enable Voice</button><button data-sim-only="true" disabled="" id="drive">▶ Auto Drive</button><button data-sim-only="true" disabled="" id="step">Advance 50 m</button><button data-sim-only="true" id="reset">↺ Restart</button></div>
+<button class="main" disabled="" id="report">⚠ POTHOLE! · REPORT</button><div class="row" style="margin:9px 0"><span id="toast"></span><button id="undo" style="display:none;padding:8px 13px">UNDO</button></div>
+<div class="card"><div class="row"><b>Survey log</b><span class="badge" id="count">0 reports</span></div><div class="muted" id="log" style="margin-top:8px">No reports yet.</div></div>
+<p class="hint" id="routeStatus">Loading a road-following route from the OpenStreetMap-based routing service…</p>
+<p class="hint">Requires internet for map tiles and simulation routing. Live GPS can optionally query the nearest mapped road, but estimates movement direction only when GPS displacement exceeds uncertainty; it does not verify road direction or provide real-world hazard warnings. Road lookups share your GPS coordinates with OSRM only when you opt in. All simulation hazards are fictional. Lab uses a predefined route and explicitly tagged off-route test hazard, not GPS-based road matching. Reports stay in browser memory only. Do not operate while driving.</p></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script>
+const $=x=>document.getElementById(x), rad=x=>x*Math.PI/180;
+function md(a,b){let x=rad(b[0]-a[0]),y=rad(b[1]-a[1]);return 6371000*2*Math.asin(Math.sqrt(Math.sin(x/2)**2+Math.cos(rad(a[0]))*Math.cos(rad(b[0]))*Math.sin(y/2)**2))}
+const map=L.map('map').setView([17.9925,-76.799],14);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
+let points=[],cum=[],total=0,car=null,routeLine=null,d=0,voice=localStorage.getItem('rassVoice')!=='off',audioReady=false,playing=false,timer=null,alerts=[],heard=new Set(),reports=[],reportLayer=L.layerGroup().addTo(map);let labOn=false,labHazards=[],labPins=L.layerGroup().addTo(map),labAnnounced=new Set();let mode='sim',watchId=null,gpsFix=null,gpsMarker=null,accuracyCircle=null,lastLookup=0,matchedMarker=null,history=[],motionHeading=null,motionReliable=false,roadDistance=null;
+function pos(m){m=Math.max(0,Math.min(total,m));let i=1;while(i<cum.length-1&&cum[i]<m)i++;let f=(m-cum[i-1])/(cum[i]-cum[i-1]||1);return [points[i-1][0]+f*(points[i][0]-points[i-1][0]),points[i-1][1]+f*(points[i][1]-points[i-1][1])]}
+function speak(t){if(!voice||!audioReady||!window.speechSynthesis)return;window.speechSynthesis.cancel();let a=new SpeechSynthesisUtterance(t);a.lang='en-US';a.rate=.95;window.speechSynthesis.speak(a)}
+function stop(){playing=false;clearInterval(timer);timer=null;$('drive').textContent='▶ Auto Drive'}
+function update(){if(mode!=='sim'||!points.length)return;if(labOn){updateLab();return;}car.setLatLng(pos(d));map.panTo(pos(d),{animate:true,duration:.35});let h=alerts.find(a=>(a.end||a.at+45)>=d);let rem=h?Math.max(0,Math.round(h.at-d)):0;let threshold=Math.max(120,Number($('speed').value)*3.6);$('name').textContent=h?h.name:'No upcoming hazards';$('meta').textContent=h?(h.verified?'Confirmed':'Provisional')+(h.end?' · Damaged stretch':''):'Route clear';$('dist').textContent=h?rem+' m':'✓';let warn=h&&rem<=threshold;if(warn&&!heard.has(h.name)){heard.add(h.name);$('speech').textContent='🔊 '+h.voice;speak(h.voice)}else if(!warn)$('speech').textContent='Monitoring road ahead…';$('alert').className='card'+(warn?' warn':'');if(d>=total){stop();$('speech').textContent='End of route.'}}
+function advance(n){d=Math.min(total,d+n);update()}
+function log(){let r=reports.at(-1);$('count').textContent=reports.length+' reports';$('log').textContent=r?(r.kind==='gps'?'Latest: Pothole · Live GPS test · accuracy ±'+Math.round(r.accuracy)+' m':'Latest: Pothole · km '+(r.at/1000).toFixed(2)+' · simulated'):'No reports yet.';$('undo').style.display=reports.length?'inline-block':'none'}
+$('speed').oninput=()=>{$('speedtxt').textContent=$('speed').value+' km/h';update()};
+function unlockAudio(){audioReady=true;if(window.speechSynthesis){window.speechSynthesis.cancel();window.speechSynthesis.getVoices()}} 
+$('voice').textContent=voice?'🔇 Mute Voice':'🔊 Enable Voice';
+$('voice').onclick=()=>{unlockAudio();voice=!voice;localStorage.setItem('rassVoice',voice?'on':'off');$('voice').textContent=voice?'🔇 Mute Voice':'🔊 Enable Voice';if(!voice)window.speechSynthesis?.cancel();$('toast').textContent=voice?'Voice alerts on':'Voice alerts muted'};
+
+$('step').onclick=()=>advance(50);
+$('drive').onclick=()=>{unlockAudio();if(playing){stop();return}playing=true;$('drive').textContent='⏸ Pause';timer=setInterval(()=>advance(Number($('speed').value)/3.6*.75),750)};
+$('reset').onclick=()=>{stop();d=0;heard.clear();labAnnounced.clear();window.speechSynthesis?.cancel();if(mode==='sim')update()};
+$('report').onclick=()=>{if(mode==='gps'){if(!gpsFix){$('toast').textContent='Waiting for a valid GPS fix';return}reports.push({kind:'gps',at:[gpsFix.latitude,gpsFix.longitude],accuracy:gpsFix.accuracy});L.circleMarker([gpsFix.latitude,gpsFix.longitude],{radius:7,fillColor:'#ef6170',fillOpacity:1,color:'white'}).addTo(reportLayer);$('toast').textContent='✓ Test pothole captured · GPS ±'+Math.round(gpsFix.accuracy)+' m';log();return}reports.push({kind:'sim',at:d});L.circleMarker(pos(d),{radius:7,fillColor:'#ef6170',fillOpacity:1,color:'white'}).addTo(reportLayer);$('toast').textContent='✓ Pothole captured at simulated road position';log()};
+$('undo').onclick=()=>{reports.pop();reportLayer.clearLayers();reports.forEach(x=>L.circleMarker(x.kind==='gps'?x.at:pos(x.at),{radius:7,fillColor:'#ef6170',fillOpacity:1,color:'white'}).addTo(reportLayer));$('toast').textContent='Last report undone';log()};
+
+
+function heading(a,b){let x=rad(b.longitude-a.longitude),y=Math.sin(x)*Math.cos(rad(b.latitude)),z=Math.cos(rad(a.latitude))*Math.sin(rad(b.latitude))-Math.sin(rad(a.latitude))*Math.cos(rad(b.latitude))*Math.cos(x);return (Math.atan2(y,z)*180/Math.PI+360)%360}
+function compass(deg){return ['N','NE','E','SE','S','SW','W','NW'][Math.round(deg/45)%8]}
+function updateMotion(c){
+ const now=Date.now();const reading={latitude:c.latitude,longitude:c.longitude,accuracy:c.accuracy,t:now};
+ history.push(reading);history=history.filter(x=>now-x.t<30000).slice(-30);
+ let origin=history.find(x=>now-x.t>=4000&&x.accuracy<=30);
+ if(!origin&&history.length>1)origin=history[0];
+ let dist=origin?md([origin.latitude,origin.longitude],[c.latitude,c.longitude]):0;
+ let noise=origin?Math.max(15,origin.accuracy+c.accuracy):Infinity;
+ let elapsed=origin?(now-origin.t)/1000:0;
+ motionReliable=!!(origin&&elapsed>=3&&dist>noise&&dist>=20&&c.accuracy<=30);
+ motionHeading=motionReliable?heading(origin,reading):null;
+ $('motionStatus').textContent=motionReliable?'Movement detected · '+Math.round(dist)+' m over '+Math.round(elapsed)+' s':'Movement uncertain · GPS jitter or insufficient travel';
+ $('directionStatus').textContent=motionReliable?'Estimated heading: '+Math.round(motionHeading)+'° ('+compass(motionHeading)+')':'Direction: unknown (stationary / low confidence)';
+ updateRoadConfidence();
+}
+function updateRoadConfidence(){
+ let good=motionReliable&&roadDistance!==null&&roadDistance<=20&&gpsFix&&gpsFix.accuracy<=20;
+ $('confidenceStatus').textContent=good?'Road candidate: promising, but NOT direction-verified':'Road confidence: insufficient for road-specific warnings';
+}
+async function lookupNearbyRoad(coords){
+ if(!$('matchConsent').checked){$('matchStatus').textContent='Road lookup off · GPS stays on device';return}
+ if(coords.accuracy>35){$('matchStatus').textContent='GPS accuracy too low for road lookup (±'+Math.round(coords.accuracy)+' m)';return}
+ if(Date.now()-lastLookup<20000)return;
+ lastLookup=Date.now();$('matchStatus').textContent='Checking nearest mapped road…';
+ try{
+ const c=new AbortController(),t=setTimeout(()=>c.abort(),7000);
+ const u='https://router.project-osrm.org/nearest/v1/driving/'+coords.longitude+','+coords.latitude+'?number=1';
+ const r=await fetch(u,{signal:c.signal});clearTimeout(t);
+ if(!r.ok)throw Error('Road service unavailable');
+ const j=await r.json();if(mode!=='gps'||!$('matchConsent').checked)return;
+ const w=j.waypoints?.[0];if(!w)throw Error('No nearby road candidate');
+ const delta=Math.round(w.distance);roadDistance=delta;updateRoadConfidence();
+ const loc=[w.location[1],w.location[0]];
+ if(matchedMarker)map.removeLayer(matchedMarker);
+ matchedMarker=L.circleMarker(loc,{radius:7,color:'#ffbb66',weight:2,fillColor:'#ffbb66',fillOpacity:.8}).addTo(map).bindPopup('Nearest mapped road candidate · NOT verified');
+ $('matchStatus').textContent=delta<=25?'Nearby mapped road candidate found':'Road candidate too far to trust';
+ $('matchDetail').textContent=(w.name||'Unnamed road')+' · '+delta+' m from GPS · heading and road direction NOT verified';
+ }catch(e){$('matchStatus').textContent='Road lookup unavailable: '+e.message}
+}
+$('matchConsent').onchange=()=>{if(!$('matchConsent').checked){roadDistance=null;updateRoadConfidence();$('matchStatus').textContent='Road lookup disabled';$('matchDetail').textContent='';if(matchedMarker){map.removeLayer(matchedMarker);matchedMarker=null}}else if(gpsFix){lastLookup=0;lookupNearbyRoad(gpsFix)}};
+function adjustControls(){let gps=mode==='gps';$('simSpeedRow').style.display=gps?'none':'';$('speed').style.display=gps?'none':'';document.querySelectorAll('[data-sim-only]').forEach(x=>x.style.display=gps?'none':'');}
+
+function stopGPS(){gpsFix=null;lastLookup=0;history=[];motionReliable=false;motionHeading=null;roadDistance=null;if(mode==='gps')$('report').disabled=true;if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}$('gpsStatus').textContent='GPS stopped. Last position may remain visible until you leave GPS mode.';$('startGPS').disabled=false}
+function switchMode(next){stop();if(next==='sim'){stopGPS();mode='sim';adjustControls();$('gpsPanel').style.display='none';$('simMode').className='main';$('gpsMode').className='';$('drive').disabled=!points.length;$('step').disabled=!points.length;$('report').disabled=!points.length;$('alert').style.display='block';$('speed').disabled=false;if(gpsMarker)map.removeLayer(gpsMarker);if(accuracyCircle)map.removeLayer(accuracyCircle);if(routeLine)map.fitBounds(routeLine.getBounds(),{padding:[20,20]});update()}else{if(labOn){labOn=false;$('labToggle').checked=false;labPins.clearLayers()}mode='gps';adjustControls();$('gpsPanel').style.display='block';$('gpsMode').className='main';$('simMode').className='';$('drive').disabled=true;$('step').disabled=true;$('report').disabled=true;$('alert').style.display='none';$('speed').disabled=true;if(car)map.removeLayer(car);$('gpsStatus').textContent='Tap Start GPS to request location permission.'}}
+$('simMode').onclick=()=>{if(car&&!map.hasLayer(car))car.addTo(map);switchMode('sim')};$('gpsMode').onclick=()=>switchMode('gps');
+$('startGPS').onclick=()=>{unlockAudio();if(!window.isSecureContext){$('gpsStatus').textContent='GPS requires HTTPS. Open the published GitHub Pages link.';return}if(!navigator.geolocation){$('gpsStatus').textContent='This browser does not support GPS location.';return}if(watchId!==null)return;$('gpsStatus').textContent='Requesting location permission…';$('startGPS').disabled=true;watchId=navigator.geolocation.watchPosition(p=>{if(mode!=='gps')return;gpsFix=p.coords;const latlng=[p.coords.latitude,p.coords.longitude];if(!gpsMarker){gpsMarker=L.circleMarker(latlng,{radius:11,fillColor:'#2389ff',fillOpacity:1,color:'white',weight:3}).addTo(map)}else gpsMarker.setLatLng(latlng);if(!accuracyCircle){accuracyCircle=L.circle(latlng,{radius:p.coords.accuracy,color:'#2389ff',fillOpacity:.07,weight:1}).addTo(map)}else{accuracyCircle.setLatLng(latlng);accuracyCircle.setRadius(p.coords.accuracy)}map.setView(latlng,Math.max(map.getZoom(),16));$('accuracy').textContent='±'+Math.round(p.coords.accuracy)+' m';$('gpsSpeed').textContent=p.coords.speed===null?'Not available':Math.round(p.coords.speed*3.6)+' km/h';$('gpsStatus').textContent='GPS active · Position displayed on map';$('report').disabled=false;updateMotion(p.coords);lookupNearbyRoad(p.coords)},err=>{let msg=err.code===1?'Location permission denied. Allow location for this site in browser settings.':err.code===2?'Location unavailable. Try outdoors or turn on phone location.':'GPS timed out. Try again.';$('gpsStatus').textContent=msg;stopGPS();$('gpsStatus').textContent=msg},{enableHighAccuracy:true,maximumAge:3000,timeout:15000})};
+$('stopGPS').onclick=stopGPS;
+window.addEventListener('pagehide',stopGPS);
+
+
+function createLab(){
+ labPins.clearLayers();labHazards=[
+ {id:'ahead',name:'Crater',at:total*.27,voice:'Warning. Severe road damage ahead. Reduce speed.',kind:'route',color:'#f36558'},
+ {id:'side',name:'Bumpy Ride',at:total*.43,kind:'nearby',color:'#aa78ff'},
+ {id:'stretch',name:'Eeny Meeny Miney Mo',at:total*.66,end:total*.66+Math.min(200,total*.1),voice:'Caution. Multiple potholes reported along the road ahead.',kind:'route',color:'#f9a74e'},
+ {id:'late',name:'Dig Out',at:total*.88,voice:'Caution. Road damage reported ahead.',kind:'route',color:'#f36558'}];
+ labHazards.forEach(h=>{let p=pos(h.at);if(h.kind==='nearby')p=[p[0]+.0016,p[1]+.0016];L.circleMarker(p,{radius:9,color:'white',weight:2,fillColor:h.color,fillOpacity:1}).addTo(labPins).bindPopup(h.name+(h.kind==='nearby'?' · OFF ROUTE (test case)':' · ON ROUTE (test case)'))});
+}
+function updateLab(){
+ car.setLatLng(pos(d));map.panTo(pos(d),{animate:true,duration:.35});
+ let ahead=labHazards.filter(h=>h.kind==='route'&&(h.end??h.at+35)>=d).sort((a,b)=>a.at-b.at);
+ let h=ahead[0],rem=h?Math.max(0,Math.round(h.at-d)):0;
+ let threshold=Math.max(120,Number($('speed').value)*3.6);
+ $('name').textContent=h?h.name:'No upcoming hazards';$('meta').textContent=h?(h.end?'Damaged stretch · SIMULATED':'On selected route · SIMULATED'):'Selected route clear';$('dist').textContent=h?rem+' m':'✓';
+ let warn=!!h&&rem<=threshold;
+ if(warn&&!labAnnounced.has(h.id)){labAnnounced.add(h.id);$('speech').textContent='🔊 '+h.voice;speak(h.voice)}else if(!warn)$('speech').textContent='Monitoring simulated route ahead…';
+ $('alert').className='card'+(warn?' warn':'');
+ let passed=labHazards.filter(x=>x.kind==='route'&&(x.end??x.at+35)<d).length;
+ $('labStatus').textContent='Route position '+Math.round(d)+' / '+Math.round(total)+' m · '+(h?rem+' m to next relevant hazard':'No remaining relevant hazards');
+ $('labCounts').textContent='Excluded nearby road: 1 · Passed hazards: '+passed+' · Remaining relevant: '+ahead.length+' · Spoken: '+labAnnounced.size;
+ if(d>=total){stop();$('speech').textContent='End of simulated journey.'}
+}
+$('labToggle').onchange=()=>{labOn=$('labToggle').checked;stop();d=0;heard.clear();labAnnounced.clear();if(labOn){if(!points.length){$('labToggle').checked=false;labOn=false;return}createLab()}else{labPins.clearLayers();$('labStatus').textContent='Enable lab in Simulator mode.';$('labCounts').textContent=''}if(mode==='gps'&&labOn){$('simMode').click()}update()};
+
+async function init(){
+try{
+ // Use OSRM's public demonstration router for a *real* road-aligned path. Avoid fictional straight-line fallback.
+const start=[-76.8065,17.9907],via=[-76.7986,17.9935],end=[-76.7866,17.9977];
+let url='https://router.project-osrm.org/route/v1/driving/'+[start,via,end].map(p=>p.join(',')).join(';')+'?overview=full&geometries=geojson&steps=false';
+let controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),14000);
+let response=await fetch(url,{signal:controller.signal});clearTimeout(timeout);
+if(!response.ok)throw Error('Routing server returned '+response.status);
+let data=await response.json();if(data.code!=='Ok'||!data.routes?.length)throw Error('No drivable route available');
+points=data.routes[0].geometry.coordinates.map(p=>[p[1],p[0]]);if(points.length<2)throw Error('Incomplete road geometry');
+cum=[0];for(let i=1;i<points.length;i++)cum.push(cum[i-1]+md(points[i-1],points[i]));total=cum.at(-1);
+routeLine=L.polyline(points,{color:'#11c9b3',weight:6,opacity:.86}).addTo(map);map.fitBounds(routeLine.getBounds(),{padding:[20,20]});car=L.circleMarker(pos(0),{radius:11,fillColor:'#2389ff',fillOpacity:1,color:'white',weight:3}).addTo(map);
+let specs=[{f:.18,name:'Bumpy Ride',voice:'Caution. Uneven road surface ahead.',verified:true},{f:.50,name:'Crater',voice:'Warning. Severe road damage ahead. Reduce speed.',verified:true},{f:.79,name:'Eeny Meeny Miney Mo',voice:'Caution. Multiple potholes reported along the road ahead.',verified:false,stretch:180}];
+alerts=specs.map(x=>({...x,at:total*x.f,end:x.stretch?total*x.f+x.stretch:undefined}));
+alerts.forEach(x=>L.circleMarker(pos(x.at),{radius:10,fillColor:x.name==='Crater'?'#fa685d':'#ffb866',fillOpacity:1,color:'white',weight:2}).addTo(map).bindPopup(x.name+(x.verified?' · Confirmed':' · Provisional')));
+$('routeStatus').textContent='✓ Road-aligned route loaded from OSRM / OpenStreetMap ('+(total/1000).toFixed(1)+' km). Map matching of real GPS is not yet implemented.';
+if(mode==='sim')$('step').disabled=$('drive').disabled=$('report').disabled=false;update();
+}catch(e){$('name').textContent='Road route unavailable';$('meta').textContent='No inaccurate straight-line fallback';$('routeStatus').textContent='Could not load the road-routing service: '+e.message+'. Check your internet connection and reopen the file. The demo intentionally will not draw a fake road route.'}
+}
+adjustControls();init();
+</script></body></html>
