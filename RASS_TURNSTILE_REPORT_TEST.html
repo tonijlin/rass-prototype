@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+
+<html lang="en"><head><meta charset="utf-8"/><meta content="width=device-width,initial-scale=1" name="viewport"/><title>RASS! — Integrated Guest Reporting Test</title><link href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" rel="stylesheet"/><style>
+*{box-sizing:border-box}body{margin:0;background:#0d151c;color:#f5f9fa;font:15px system-ui,Arial}header{padding:13px 16px;display:flex;justify-content:space-between;align-items:center}h1{margin:0;font-size:30px;font-style:italic}h1 span{color:#12c9b4}.sub,.muted{color:#abc1ca;font-size:12px}.badge{background:#1d4c46;border-radius:30px;color:#b8ffef;padding:7px;font-size:11px}#map{height:42vh;min-height:270px}.wrap{padding:13px 16px}.card{padding:13px;background:#1c303b;border-radius:14px;margin-bottom:10px}.warn{background:#563b30}.row{display:flex;justify-content:space-between;align-items:center;gap:12px}.title{font-weight:800;font-size:19px}.controls{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin:12px 0}button{background:#28414c;color:white;border:0;border-radius:12px;padding:13px 9px;font-weight:750;font-size:14px}button.main{background:#10c8b1;color:#062d2a}button:disabled{opacity:.4}#report{width:100%;font-size:21px;padding:20px}input{width:100%;accent-color:#10c8b1}.hint{font-size:11px;color:#aabdc5;line-height:1.5}.teal{color:#79e8d8}#toast{min-height:20px;color:#7ce8d7;font-size:13px}.leaflet-control-attribution{font-size:9px!important}</style></head><body>
+<header><div><h1>RASS<span>!</span></h1><div class="sub">JUST DRIVE · INTEGRATION TEST</div></div><div class="badge">HAZARD INTELLIGENCE</div></header>
+<div id="map"></div><div class="wrap"><section class="card" id="communityPanel" style="border:1px solid #2b746f"><div class="row"><div><div class="muted">RASS! · LIVE DEVELOPMENT FEED</div><div class="title">📍 Community Hazards</div></div><span class="badge" id="communityCount">Loading…</span></div><p class="muted" id="communityStatus" role="status" aria-live="polite">Connecting to published hazard feed…</p><div class="controls"><button class="main" id="refreshCommunity">↻ Refresh hazards</button><button id="showCommunity" disabled>🗺 Show hazard pins</button></div><p class="hint">Only approved map pins appear here. This test is not yet a live driving-warning system. Interact only when safely stopped or as a passenger.</p></section><div class="controls"><button class="main" id="simMode">🛣 Simulator</button><button id="gpsMode">📍 Live GPS Test</button></div><div class="card" id="gpsPanel" style="display:none"><div class="title">Live GPS · No destination</div><p class="muted" id="gpsStatus">Location is off. Tap Start GPS to request permission.</p><div class="row"><span class="muted">Accuracy</span><b id="accuracy">—</b></div><div class="row"><span class="muted">Speed (device estimate)</span><b id="gpsSpeed">—</b></div><div class="controls"><button class="main" id="startGPS">Start GPS</button><button id="stopGPS">Stop GPS</button></div><p class="hint">Your location stays in the browser until you submit a report. Reporting sends the current GPS coordinates and accuracy to RASS! Supabase. New reports are not automatically published on the map. Test only while safely stopped or as a passenger.</p><div class="card" id="roadMatchPanel" style="margin-top:10px"><b>Nearby mapped road · experimental</b><div class="muted" id="matchStatus" style="margin-top:7px">Start GPS to request a road lookup.</div><div class="muted" id="matchDetail"></div><div class="muted" id="motionStatus" style="margin-top:9px">Movement: waiting for GPS readings</div><div class="muted" id="directionStatus" style="margin-top:5px">Direction: unknown</div><div class="muted" id="confidenceStatus" style="margin-top:5px">Road confidence: unverified</div><p class="hint">This is a nearby-road candidate, not confirmed map matching or a safe basis for hazard warnings. Movement heading is estimated only after significant displacement beyond GPS uncertainty. Road lookup sends your current coordinates to the public OSRM demonstration service; you can disable it below.</p><label class="muted"><input id="matchConsent" style="width:auto" type="checkbox"/> Allow nearby-road lookups</label></div></div>
+<div class="card" id="labPanel"><div class="row"><b>🧪 Journey Intelligence Lab</b><label class="muted"><input id="labToggle" style="width:auto" type="checkbox"/> Enable</label></div><p class="hint">Simulated hazards only. Tests ahead / behind / nearby-road exclusion / damaged stretch on a predefined mapped route. Not live road matching.</p><div class="muted" id="labStatus">Enable lab in Simulator mode.</div><div class="muted" id="labCounts" style="margin-top:6px"></div></div><section class="card" id="verificationLab" style="margin-top:12px;border:1px solid #2c5b61">
+<div class="row"><div><div class="muted">RASS! 1.1 · CONTROLLED TEST</div><div class="title">🛡️ Hazard Verification Lab</div></div><span class="badge">DEMO</span></div>
+<p class="hint">Try reporting, confirming, and claiming repairs. Fictional records only; no submissions leave your browser. Team role is simulated and is NOT authentication.</p>
+<div class="row" style="margin:10px 0"><span>Simulated contributor role</span><select id="role" style="background:#28414c;color:white;padding:10px;border:0;border-radius:8px"><option value="community">RASS Community</option><option value="team">RASS Team</option></select></div>
+<div class="controls"><button class="main" id="newHazard">⚠ Report pothole</button><button id="confirmHazard">✓ Confirm existing</button><button id="claimRepair">🛠 Claim repaired</button><button id="reviewRepair">🔎 Review repair claim</button></div>
+<div class="muted" id="verificationStatus" style="margin:12px 0">No report submitted yet.</div>
+<div class="row" style="align-items:flex-start"><div><div class="muted">HAZARD STATUS</div><div class="title" id="hazardState">No active record</div></div><div><div class="muted">INDEPENDENT CONFIRMATIONS</div><div class="title" id="confirmationCount">0</div></div></div>
+<div class="hint" id="verificationHistory" style="margin-top:12px">Audit trail will appear here.</div>
+<button id="resetVerification" style="width:100%;margin-top:12px">↺ Reset verification scenario</button>
+<p class="hint">In the actual app, contributor identities, recent road passage, independent confirmations, abuse detection, review authority and immutable audit history require a secure backend. This lab simulates decisions only.</p>
+</section><div class="card" id="alert"><div class="row"><div><div class="muted">NEXT ROAD ALERT</div><div class="title" id="name">Loading mapped roads…</div><div class="muted" id="meta">Routing service required</div></div><div class="title" id="dist">—</div></div><div class="muted" id="speech" style="margin-top:9px">Voice is on by default; tap Auto Drive or Start GPS to enable browser audio.</div></div>
+<div class="row" id="simSpeedRow"><span>Simulated speed</span><b id="speedtxt">50 km/h</b></div><input id="speed" max="100" min="20" step="10" style="" type="range" value="50"/>
+<div class="controls"><button class="main" id="voice">🔊 Enable Voice</button><button data-sim-only="true" disabled="" id="drive">▶ Auto Drive</button><button data-sim-only="true" disabled="" id="step">Advance 50 m</button><button data-sim-only="true" id="reset">↺ Restart</button></div>
+<div id="rassCaptcha" style="display:none;min-height:0;margin:8px auto;text-align:center"></div><button class="main" disabled="" id="report">⚠ REPORT POTHOLE</button><div class="row" style="margin:9px 0"><span id="toast"></span><button id="undo" style="display:none;padding:8px 13px">UNDO</button></div>
+<div class="card"><div class="row"><b>Survey log</b><span class="badge" id="count">0 reports</span></div><div class="muted" id="log" style="margin-top:8px">No reports yet.</div></div>
+<p class="hint" id="routeStatus">Loading a road-following route from the OpenStreetMap-based routing service…</p>
+<p class="hint">Requires internet for map tiles and simulation routing. Live GPS can optionally query the nearest mapped road, but estimates movement direction only when GPS displacement exceeds uncertainty; it does not verify road direction or provide real-world hazard warnings. Road lookups share your GPS coordinates with OSRM only when you opt in. All simulation hazards are fictional. Lab uses a predefined route and explicitly tagged off-route test hazard, not GPS-based road matching. Simulator reports stay in browser memory; live GPS reports are saved to Supabase. Do not operate while driving.</p></div>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" async defer></script><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.8/dist/umd/supabase.min.js"></script><script>
+const $=x=>document.getElementById(x), rad=x=>x*Math.PI/180;
+function md(a,b){let x=rad(b[0]-a[0]),y=rad(b[1]-a[1]);return 6371000*2*Math.asin(Math.sqrt(Math.sin(x/2)**2+Math.cos(rad(a[0]))*Math.cos(rad(b[0]))*Math.sin(y/2)**2))}
+const map=L.map('map').setView([17.9925,-76.799],14);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap contributors'}).addTo(map);
+// Public publishable credentials only; never place a service-role or secret key in browser code.
+const RASS_SUPABASE_URL='https://hwoqolkmfyvxddyvpasm.supabase.co';
+const RASS_PUBLISHABLE_KEY='sb_publishable_Xpm78JqqmovaIi6nPzrRCg_9q0NWa2Z';
+const communityLayer=L.featureGroup().addTo(map);
+const RASS_HAZARD_LABELS={unclassified:'Unclassified Road Hazard',dilly_dally:'DILLY DALLY',bumpy_ride:'BUMPY RIDE',dig_out:'DIG OUT',crater:'CRATER',scrapings:'SCRAPINGS',flood_watch:'FLOOD WATCH',no_passage:'NO PASSAGE',eeny_meeny_miney_mo:'EENY MEENY MINEY MO'};
+function rassHazardLabel(value){return RASS_HAZARD_LABELS[value]||String(value||'Unclassified Road Hazard').replace(/_/g,' ').toUpperCase()}
+function rassReportedDate(value){if(!value)return '';const d=new Date(value);return Number.isNaN(d.getTime())?'':'Reported '+d.toLocaleDateString('en-JM',{year:'numeric',month:'short',day:'numeric'})}
+let communityHazards=[],communityLoading=false;
+async function loadCommunityHazards(){
+ if(communityLoading)return;
+ communityLoading=true;$('refreshCommunity').disabled=true;
+ $('communityStatus').textContent='Loading published hazards…';
+ try{
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),12000);
+  let response;
+  try{response=await fetch(RASS_SUPABASE_URL+'/rest/v1/rpc/rass_get_map_hazards',{method:'POST',headers:{'apikey':RASS_PUBLISHABLE_KEY,'Content-Type':'application/json'},body:'{}',signal:controller.signal,cache:'no-store'});}finally{clearTimeout(timeout)}
+  if(!response.ok){let detail='';try{const e=await response.json();detail=e.message||e.error||''}catch(_){}throw Error('HTTP '+response.status+(detail?' · '+detail:''))}
+  const data=await response.json();if(!Array.isArray(data))throw Error('Unexpected response format');
+  const valid=data.filter(h=>Number.isFinite(Number(h.latitude))&&Number.isFinite(Number(h.longitude))&&Math.abs(Number(h.latitude))<=90&&Math.abs(Number(h.longitude))<=180);
+  communityLayer.clearLayers();communityHazards=valid;
+  valid.forEach(h=>{
+   const label=rassHazardLabel(h.classification);
+   const state='';
+   const colors={dig_out:'#f45d5d',crater:'#d73c48',dilly_dally:'#f5a448',bumpy_ride:'#e6c85c',scrapings:'#8c9ce6',flood_watch:'#4aa9e9',no_passage:'#e64d65',eeny_meeny_miney_mo:'#ed9361',unclassified:'#ef9b65'};const pin=L.circleMarker([Number(h.latitude),Number(h.longitude)],{radius:9,color:'#fff',weight:2,fillColor:colors[h.classification]||colors.unclassified,fillOpacity:.95}).addTo(communityLayer);
+   const popup=document.createElement('div');
+   const heading=document.createElement('strong');heading.textContent='RASS! · '+label;
+   const info=document.createElement('div');info.textContent='';
+   const note=document.createElement('small');note.textContent='';
+   popup.append(heading);pin.bindPopup(popup);
+  });
+  $('communityCount').textContent=valid.length+' hazard'+(valid.length===1?'':'s');
+  $('communityStatus').textContent=valid.length?'✓ '+valid.length+' published community hazard'+(valid.length===1?'':'s')+' loaded. Tap “Show hazard pins” to find them.':'No published hazards available yet.';
+  $('showCommunity').disabled=!valid.length;
+ }catch(e){$('communityStatus').textContent='Could not load community hazards: '+e.message+' · Check project URL/key, API permissions, and connection.';$('communityCount').textContent='Unavailable';}
+ finally{communityLoading=false;$('refreshCommunity').disabled=false}
+}
+$('refreshCommunity').onclick=loadCommunityHazards;
+$('showCommunity').onclick=()=>{if(communityHazards.length&&communityLayer.getLayers().length)map.fitBounds(communityLayer.getBounds(),{padding:[35,35],maxZoom:16})};
+loadCommunityHazards();
+
+// Guest session is automatic and persistent. No email, password or sign-up UI.
+// The current Supabase project has new sign-ups disabled; returning guests with a
+// valid session can report, while fresh guests must wait until controlled rollout.
+const rassClient=window.supabase?.createClient(RASS_SUPABASE_URL,RASS_PUBLISHABLE_KEY,{
+ auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storageKey:'rass-guest-session'}
+});
+let reportingBusy=false;
+const RASS_TURNSTILE_SITE_KEY='0x4AAAAAAF4IZFqYLwcDMONX';
+// Turnstile is used only when a new anonymous identity is needed.
+// A managed challenge may become visible; never claim this is always invisible.
+async function rassCaptchaToken(){
+ const mount=$('rassCaptcha');
+ mount.style.display='block';
+ const started=Date.now();
+ while(!window.turnstile){
+  if(Date.now()-started>12000){mount.style.display='none';throw Error('Security check unavailable. Please reload and try again.');}
+  await new Promise(resolve=>setTimeout(resolve,150));
+ }
+ return new Promise((resolve,reject)=>{
+  let finished=false,widgetId=null;
+  const finish=(err,token)=>{
+   if(finished)return;finished=true;clearTimeout(timeout);
+   try{if(widgetId!==null)window.turnstile.remove(widgetId);}catch(_){}
+   mount.style.display='none';mount.replaceChildren();
+   if(err)reject(Error(err));else resolve(token);
+  };
+  const timeout=setTimeout(()=>finish('Security check timed out. Please try again.'),90000);
+  try{
+   widgetId=window.turnstile.render(mount,{
+    sitekey:RASS_TURNSTILE_SITE_KEY,
+    theme:'dark',
+    callback:token=>finish(null,token),
+    'error-callback':()=>finish('Security check failed. Please try again.'),
+    'expired-callback':()=>finish('Security check expired. Please try again.')
+   });
+  }catch(e){finish('Security check could not start. Please try again.');}
+ });
+}
+async function rassGetGuestSession(){
+ if(!rassClient)throw Error('Guest connection unavailable. Reload with internet access.');
+ const {data:existing,error:sessionError}=await rassClient.auth.getSession();
+ if(sessionError)throw Error('Could not restore guest session.');
+ if(existing?.session?.user)return existing.session;
+ const captchaToken=await rassCaptchaToken();
+ const {data,error}=await rassClient.auth.signInAnonymously({options:{captchaToken}});
+ if(error){
+  if(/sign.?up|signup|disabled|not allowed/i.test(error.message||''))throw Error('Guest reporting is not open yet. Please try again after launch.');
+  throw Error('Guest access unavailable: '+error.message);
+ }
+ if(!data?.session)throw Error('Could not start guest session.');
+ return data.session;
+}
+async function rassSubmitLiveReport(){
+ if(reportingBusy)return;
+ if(mode!=='gps'||!gpsFix){$('toast').textContent='Start GPS first.';return;}
+ const c={latitude:gpsFix.latitude,longitude:gpsFix.longitude,accuracy:gpsFix.accuracy};
+ if(![c.latitude,c.longitude,c.accuracy].every(Number.isFinite)||c.accuracy<0||c.accuracy>100){$('toast').textContent='Waiting for a more accurate GPS fix (within 100 m).';return;}
+ reportingBusy=true;$('report').disabled=true;$('toast').textContent='Preparing secure report…';
+ try{
+  await rassGetGuestSession();
+  const {data,error}=await rassClient.rpc('rass_submit_pothole',{
+   p_latitude:c.latitude,p_longitude:c.longitude,p_gps_accuracy_m:c.accuracy
+  });
+  if(error){
+   if(/30 seconds/i.test(error.message||''))throw Error('Report received recently. Please wait 30 seconds.');
+   throw Error(error.message||'Report could not be saved.');
+  }
+  if(!data)throw Error('No report confirmation received.');
+  reports.push({kind:'saved',at:[c.latitude,c.longitude],accuracy:c.accuracy,id:data});
+  L.circleMarker([c.latitude,c.longitude],{radius:7,fillColor:'#10c8b1',fillOpacity:1,color:'white'}).addTo(reportLayer);
+  $('toast').textContent='✓ Pothole reported!';log();
+ }catch(e){$('toast').textContent=e.message||'Report failed. Try again later.'}
+ finally{reportingBusy=false;$('report').disabled=mode!=='gps'||!gpsFix;}
+}
+let points=[],cum=[],total=0,car=null,routeLine=null,d=0,voice=localStorage.getItem('rassVoice')!=='off',audioReady=false,playing=false,timer=null,alerts=[],heard=new Set(),reports=[],reportLayer=L.layerGroup().addTo(map);let labOn=false,labHazards=[],labPins=L.layerGroup().addTo(map),labAnnounced=new Set();let mode='sim',watchId=null,gpsFix=null,gpsMarker=null,accuracyCircle=null,lastLookup=0,matchedMarker=null,history=[],motionHeading=null,motionReliable=false,roadDistance=null;
+function pos(m){m=Math.max(0,Math.min(total,m));let i=1;while(i<cum.length-1&&cum[i]<m)i++;let f=(m-cum[i-1])/(cum[i]-cum[i-1]||1);return [points[i-1][0]+f*(points[i][0]-points[i-1][0]),points[i-1][1]+f*(points[i][1]-points[i-1][1])]}
+function speak(t){if(!voice||!audioReady||!window.speechSynthesis)return;window.speechSynthesis.cancel();let a=new SpeechSynthesisUtterance(t);a.lang='en-US';a.rate=.95;window.speechSynthesis.speak(a)}
+function stop(){playing=false;clearInterval(timer);timer=null;$('drive').textContent='▶ Auto Drive'}
+function update(){if(mode!=='sim'||!points.length)return;if(labOn){updateLab();return;}car.setLatLng(pos(d));map.panTo(pos(d),{animate:true,duration:.35});let h=alerts.find(a=>(a.end||a.at+45)>=d);let rem=h?Math.max(0,Math.round(h.at-d)):0;let threshold=Math.max(120,Number($('speed').value)*3.6);$('name').textContent=h?h.name:'No upcoming hazards';$('meta').textContent=h?(h.verified?'Confirmed':'Provisional')+(h.end?' · Damaged stretch':''):'Route clear';$('dist').textContent=h?rem+' m':'✓';let warn=h&&rem<=threshold;if(warn&&!heard.has(h.name)){heard.add(h.name);$('speech').textContent='🔊 '+h.voice;speak(h.voice)}else if(!warn)$('speech').textContent='Monitoring road ahead…';$('alert').className='card'+(warn?' warn':'');if(d>=total){stop();$('speech').textContent='End of route.'}}
+function advance(n){d=Math.min(total,d+n);update()}
+function log(){let r=reports.at(-1);$('count').textContent=reports.length+' reports';$('log').textContent=r?(r.kind==='saved'?'Latest: Pothole saved to RASS! · GPS ±'+Math.round(r.accuracy)+' m':r.kind==='gps'?'Latest: Pothole · GPS test · ±'+Math.round(r.accuracy)+' m':'Latest: Pothole · km '+(r.at/1000).toFixed(2)+' · simulated'):'No reports yet.';$('undo').style.display=reports.length&&r.kind==='sim'?'inline-block':'none'}
+$('speed').oninput=()=>{$('speedtxt').textContent=$('speed').value+' km/h';update()};
+function unlockAudio(){audioReady=true;if(window.speechSynthesis){window.speechSynthesis.cancel();window.speechSynthesis.getVoices()}} 
+$('voice').textContent=voice?'🔇 Mute Voice':'🔊 Enable Voice';
+$('voice').onclick=()=>{unlockAudio();voice=!voice;localStorage.setItem('rassVoice',voice?'on':'off');$('voice').textContent=voice?'🔇 Mute Voice':'🔊 Enable Voice';if(!voice)window.speechSynthesis?.cancel();$('toast').textContent=voice?'Voice alerts on':'Voice alerts muted'};
+
+$('step').onclick=()=>advance(50);
+$('drive').onclick=()=>{unlockAudio();if(playing){stop();return}playing=true;$('drive').textContent='⏸ Pause';timer=setInterval(()=>advance(Number($('speed').value)/3.6*.75),750)};
+$('reset').onclick=()=>{stop();d=0;heard.clear();labAnnounced.clear();window.speechSynthesis?.cancel();if(mode==='sim')update()};
+$('report').onclick=()=>{if(mode==='gps'){rassSubmitLiveReport();return}if(!points.length)return;reports.push({kind:'sim',at:d});L.circleMarker(pos(d),{radius:7,fillColor:'#ef6170',fillOpacity:1,color:'white'}).addTo(reportLayer);$('toast').textContent='✓ Simulated pothole captured';log()};
+$('undo').onclick=()=>{if(reports.at(-1)?.kind!=='sim')return;reports.pop();reportLayer.clearLayers();reports.forEach(x=>L.circleMarker(x.kind==='saved'||x.kind==='gps'?x.at:pos(x.at),{radius:7,fillColor:'#ef6170',fillOpacity:1,color:'white'}).addTo(reportLayer));$('toast').textContent='Last report undone';log()};
+
+
+function heading(a,b){let x=rad(b.longitude-a.longitude),y=Math.sin(x)*Math.cos(rad(b.latitude)),z=Math.cos(rad(a.latitude))*Math.sin(rad(b.latitude))-Math.sin(rad(a.latitude))*Math.cos(rad(b.latitude))*Math.cos(x);return (Math.atan2(y,z)*180/Math.PI+360)%360}
+function compass(deg){return ['N','NE','E','SE','S','SW','W','NW'][Math.round(deg/45)%8]}
+function updateMotion(c){
+ const now=Date.now();const reading={latitude:c.latitude,longitude:c.longitude,accuracy:c.accuracy,t:now};
+ history.push(reading);history=history.filter(x=>now-x.t<30000).slice(-30);
+ let origin=history.find(x=>now-x.t>=4000&&x.accuracy<=30);
+ if(!origin&&history.length>1)origin=history[0];
+ let dist=origin?md([origin.latitude,origin.longitude],[c.latitude,c.longitude]):0;
+ let noise=origin?Math.max(15,origin.accuracy+c.accuracy):Infinity;
+ let elapsed=origin?(now-origin.t)/1000:0;
+ motionReliable=!!(origin&&elapsed>=3&&dist>noise&&dist>=20&&c.accuracy<=30);
+ motionHeading=motionReliable?heading(origin,reading):null;
+ $('motionStatus').textContent=motionReliable?'Movement detected · '+Math.round(dist)+' m over '+Math.round(elapsed)+' s':'Movement uncertain · GPS jitter or insufficient travel';
+ $('directionStatus').textContent=motionReliable?'Estimated heading: '+Math.round(motionHeading)+'° ('+compass(motionHeading)+')':'Direction: unknown (stationary / low confidence)';
+ updateRoadConfidence();
+}
+function updateRoadConfidence(){
+ let good=motionReliable&&roadDistance!==null&&roadDistance<=20&&gpsFix&&gpsFix.accuracy<=20;
+ $('confidenceStatus').textContent=good?'Road candidate: promising, but NOT direction-verified':'Road confidence: insufficient for road-specific warnings';
+}
+async function lookupNearbyRoad(coords){
+ if(!$('matchConsent').checked){$('matchStatus').textContent='Road lookup off · GPS stays on device';return}
+ if(coords.accuracy>35){$('matchStatus').textContent='GPS accuracy too low for road lookup (±'+Math.round(coords.accuracy)+' m)';return}
+ if(Date.now()-lastLookup<20000)return;
+ lastLookup=Date.now();$('matchStatus').textContent='Checking nearest mapped road…';
+ try{
+ const c=new AbortController(),t=setTimeout(()=>c.abort(),7000);
+ const u='https://router.project-osrm.org/nearest/v1/driving/'+coords.longitude+','+coords.latitude+'?number=1';
+ const r=await fetch(u,{signal:c.signal});clearTimeout(t);
+ if(!r.ok)throw Error('Road service unavailable');
+ const j=await r.json();if(mode!=='gps'||!$('matchConsent').checked)return;
+ const w=j.waypoints?.[0];if(!w)throw Error('No nearby road candidate');
+ const delta=Math.round(w.distance);roadDistance=delta;updateRoadConfidence();
+ const loc=[w.location[1],w.location[0]];
+ if(matchedMarker)map.removeLayer(matchedMarker);
+ matchedMarker=L.circleMarker(loc,{radius:7,color:'#ffbb66',weight:2,fillColor:'#ffbb66',fillOpacity:.8}).addTo(map).bindPopup('Nearest mapped road candidate · NOT verified');
+ $('matchStatus').textContent=delta<=25?'Nearby mapped road candidate found':'Road candidate too far to trust';
+ $('matchDetail').textContent=(w.name||'Unnamed road')+' · '+delta+' m from GPS · heading and road direction NOT verified';
+ }catch(e){$('matchStatus').textContent='Road lookup unavailable: '+e.message}
+}
+$('matchConsent').onchange=()=>{if(!$('matchConsent').checked){roadDistance=null;updateRoadConfidence();$('matchStatus').textContent='Road lookup disabled';$('matchDetail').textContent='';if(matchedMarker){map.removeLayer(matchedMarker);matchedMarker=null}}else if(gpsFix){lastLookup=0;lookupNearbyRoad(gpsFix)}};
+function adjustControls(){let gps=mode==='gps';$('simSpeedRow').style.display=gps?'none':'';$('speed').style.display=gps?'none':'';document.querySelectorAll('[data-sim-only]').forEach(x=>x.style.display=gps?'none':'');}
+
+function stopGPS(){gpsFix=null;lastLookup=0;history=[];motionReliable=false;motionHeading=null;roadDistance=null;if(mode==='gps')$('report').disabled=true;if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null}$('gpsStatus').textContent='GPS stopped. Last position may remain visible until you leave GPS mode.';$('startGPS').disabled=false}
+function switchMode(next){stop();if(next==='sim'){stopGPS();mode='sim';adjustControls();$('gpsPanel').style.display='none';$('simMode').className='main';$('gpsMode').className='';$('drive').disabled=!points.length;$('step').disabled=!points.length;$('report').disabled=!points.length;$('alert').style.display='block';$('speed').disabled=false;if(gpsMarker)map.removeLayer(gpsMarker);if(accuracyCircle)map.removeLayer(accuracyCircle);if(routeLine)map.fitBounds(routeLine.getBounds(),{padding:[20,20]});update()}else{if(labOn){labOn=false;$('labToggle').checked=false;labPins.clearLayers()}mode='gps';adjustControls();$('gpsPanel').style.display='block';$('gpsMode').className='main';$('simMode').className='';$('drive').disabled=true;$('step').disabled=true;$('report').disabled=true;$('alert').style.display='none';$('speed').disabled=true;if(car)map.removeLayer(car);$('gpsStatus').textContent='Tap Start GPS to request location permission.'}}
+$('simMode').onclick=()=>{if(car&&!map.hasLayer(car))car.addTo(map);switchMode('sim')};$('gpsMode').onclick=()=>switchMode('gps');
+$('startGPS').onclick=()=>{unlockAudio();if(!window.isSecureContext){$('gpsStatus').textContent='GPS requires HTTPS. Open the published GitHub Pages link.';return}if(!navigator.geolocation){$('gpsStatus').textContent='This browser does not support GPS location.';return}if(watchId!==null)return;$('gpsStatus').textContent='Requesting location permission…';$('startGPS').disabled=true;watchId=navigator.geolocation.watchPosition(p=>{if(mode!=='gps')return;gpsFix=p.coords;const latlng=[p.coords.latitude,p.coords.longitude];if(!gpsMarker){gpsMarker=L.circleMarker(latlng,{radius:11,fillColor:'#2389ff',fillOpacity:1,color:'white',weight:3}).addTo(map)}else gpsMarker.setLatLng(latlng);if(!accuracyCircle){accuracyCircle=L.circle(latlng,{radius:p.coords.accuracy,color:'#2389ff',fillOpacity:.07,weight:1}).addTo(map)}else{accuracyCircle.setLatLng(latlng);accuracyCircle.setRadius(p.coords.accuracy)}map.setView(latlng,Math.max(map.getZoom(),16));$('accuracy').textContent='±'+Math.round(p.coords.accuracy)+' m';$('gpsSpeed').textContent=p.coords.speed===null?'Not available':Math.round(p.coords.speed*3.6)+' km/h';$('gpsStatus').textContent='GPS active · Position displayed on map';$('report').disabled=reportingBusy;updateMotion(p.coords);lookupNearbyRoad(p.coords)},err=>{let msg=err.code===1?'Location permission denied. Allow location for this site in browser settings.':err.code===2?'Location unavailable. Try outdoors or turn on phone location.':'GPS timed out. Try again.';$('gpsStatus').textContent=msg;stopGPS();$('gpsStatus').textContent=msg},{enableHighAccuracy:true,maximumAge:3000,timeout:15000})};
+$('stopGPS').onclick=stopGPS;
+window.addEventListener('pagehide',stopGPS);
+
+
+function createLab(){
+ labPins.clearLayers();labHazards=[
+ {id:'ahead',name:'Crater',at:total*.27,voice:'Warning. Severe road damage ahead. Reduce speed.',kind:'route',color:'#f36558'},
+ {id:'side',name:'Bumpy Ride',at:total*.43,kind:'nearby',color:'#aa78ff'},
+ {id:'stretch',name:'Eeny Meeny Miney Mo',at:total*.66,end:total*.66+Math.min(200,total*.1),voice:'Caution. Multiple potholes reported along the road ahead.',kind:'route',color:'#f9a74e'},
+ {id:'late',name:'Dig Out',at:total*.88,voice:'Caution. Road damage reported ahead.',kind:'route',color:'#f36558'}];
+ labHazards.forEach(h=>{let p=pos(h.at);if(h.kind==='nearby')p=[p[0]+.0016,p[1]+.0016];L.circleMarker(p,{radius:9,color:'white',weight:2,fillColor:h.color,fillOpacity:1}).addTo(labPins).bindPopup(h.name+(h.kind==='nearby'?' · OFF ROUTE (test case)':' · ON ROUTE (test case)'))});
+}
+function updateLab(){
+ car.setLatLng(pos(d));map.panTo(pos(d),{animate:true,duration:.35});
+ let ahead=labHazards.filter(h=>h.kind==='route'&&(h.end??h.at+35)>=d).sort((a,b)=>a.at-b.at);
+ let h=ahead[0],rem=h?Math.max(0,Math.round(h.at-d)):0;
+ let threshold=Math.max(120,Number($('speed').value)*3.6);
+ $('name').textContent=h?h.name:'No upcoming hazards';$('meta').textContent=h?(h.end?'Damaged stretch · SIMULATED':'On selected route · SIMULATED'):'Selected route clear';$('dist').textContent=h?rem+' m':'✓';
+ let warn=!!h&&rem<=threshold;
+ if(warn&&!labAnnounced.has(h.id)){labAnnounced.add(h.id);$('speech').textContent='🔊 '+h.voice;speak(h.voice)}else if(!warn)$('speech').textContent='Monitoring simulated route ahead…';
+ $('alert').className='card'+(warn?' warn':'');
+ let passed=labHazards.filter(x=>x.kind==='route'&&(x.end??x.at+35)<d).length;
+ $('labStatus').textContent='Route position '+Math.round(d)+' / '+Math.round(total)+' m · '+(h?rem+' m to next relevant hazard':'No remaining relevant hazards');
+ $('labCounts').textContent='Excluded nearby road: 1 · Passed hazards: '+passed+' · Remaining relevant: '+ahead.length+' · Spoken: '+labAnnounced.size;
+ if(d>=total){stop();$('speech').textContent='End of simulated journey.'}
+}
+$('labToggle').onchange=()=>{labOn=$('labToggle').checked;stop();d=0;heard.clear();labAnnounced.clear();if(labOn){if(!points.length){$('labToggle').checked=false;labOn=false;return}createLab()}else{labPins.clearLayers();$('labStatus').textContent='Enable lab in Simulator mode.';$('labCounts').textContent=''}if(mode==='gps'&&labOn){$('simMode').click()}update()};
+
+async function init(){
+try{
+ // Use OSRM's public demonstration router for a *real* road-aligned path. Avoid fictional straight-line fallback.
+const start=[-76.8065,17.9907],via=[-76.7986,17.9935],end=[-76.7866,17.9977];
+let url='https://router.project-osrm.org/route/v1/driving/'+[start,via,end].map(p=>p.join(',')).join(';')+'?overview=full&geometries=geojson&steps=false';
+let controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),14000);
+let response=await fetch(url,{signal:controller.signal});clearTimeout(timeout);
+if(!response.ok)throw Error('Routing server returned '+response.status);
+let data=await response.json();if(data.code!=='Ok'||!data.routes?.length)throw Error('No drivable route available');
+points=data.routes[0].geometry.coordinates.map(p=>[p[1],p[0]]);if(points.length<2)throw Error('Incomplete road geometry');
+cum=[0];for(let i=1;i<points.length;i++)cum.push(cum[i-1]+md(points[i-1],points[i]));total=cum.at(-1);
+routeLine=L.polyline(points,{color:'#11c9b3',weight:6,opacity:.86}).addTo(map);map.fitBounds(routeLine.getBounds(),{padding:[20,20]});car=L.circleMarker(pos(0),{radius:11,fillColor:'#2389ff',fillOpacity:1,color:'white',weight:3}).addTo(map);
+let specs=[{f:.18,name:'Bumpy Ride',voice:'Caution. Uneven road surface ahead.',verified:true},{f:.50,name:'Crater',voice:'Warning. Severe road damage ahead. Reduce speed.',verified:true},{f:.79,name:'Eeny Meeny Miney Mo',voice:'Caution. Multiple potholes reported along the road ahead.',verified:false,stretch:180}];
+alerts=specs.map(x=>({...x,at:total*x.f,end:x.stretch?total*x.f+x.stretch:undefined}));
+alerts.forEach(x=>L.circleMarker(pos(x.at),{radius:10,fillColor:x.name==='Crater'?'#fa685d':'#ffb866',fillOpacity:1,color:'white',weight:2}).addTo(map).bindPopup(x.name+(x.verified?' · Confirmed':' · Provisional')));
+$('routeStatus').textContent='✓ Road-aligned route loaded from OSRM / OpenStreetMap ('+(total/1000).toFixed(1)+' km). Map matching of real GPS is not yet implemented.';
+if(mode==='sim')$('step').disabled=$('drive').disabled=$('report').disabled=false;update();
+}catch(e){$('name').textContent='Road route unavailable';$('meta').textContent='No inaccurate straight-line fallback';$('routeStatus').textContent='Could not load the road-routing service: '+e.message+'. Check your internet connection and reopen the file. The demo intentionally will not draw a fake road route.'}
+}
+adjustControls();init();
+
+
+// RASS 1.1: isolated, fictional verification state machine. Not an auth or publishing service.
+const v={exists:false,status:'none',confirmations:0,repairClaim:false,history:[],teamConfirmed:false};
+function vLog(message){v.history.unshift(new Date().toLocaleTimeString()+' · '+message);v.history=v.history.slice(0,7)}
+function vRender(message){
+ $('hazardState').textContent=v.status==='none'?'No active record':v.status==='provisional'?'Provisional · review needed':v.status==='confirmed'?'Confirmed · warning eligible':v.status==='disputed'?'Confirmed · repair disputed':'Resolved · archived';
+ $('confirmationCount').textContent=String(v.confirmations);
+ $('verificationStatus').textContent=message;
+ $('verificationHistory').textContent=v.history.length?'Audit trail (this session): '+v.history.join(' | '):'Audit trail will appear here.';
+}
+$('newHazard').onclick=()=>{
+ const team=$('role').value==='team';
+ if(v.exists&&v.status!=='resolved'){vLog('Possible duplicate detected; existing record retained');vRender('Possible duplicate. Use Confirm existing instead of creating another alert.');return}
+ v.exists=true;v.status=team?'confirmed':'provisional';v.confirmations=team?1:0;v.teamConfirmed=team;v.repairClaim=false;
+ vLog((team?'RASS Team':'Community')+' submitted a new fictional pothole');
+ vRender(team?'Trusted Team report: confirmed in demo.':'Community report: provisional until independently corroborated.');
+};
+$('confirmHazard').onclick=()=>{
+ if(!v.exists||v.status==='resolved'){vRender('No unresolved hazard to confirm.');return}
+ if($('role').value==='team'){
+   if(v.teamConfirmed){vRender('This team confirmation is already counted.');return}
+   v.teamConfirmed=true;v.confirmations++;v.status='confirmed';vLog('Trusted Team corroborated existing report');vRender('Team corroboration recorded. Hazard confirmed.');return;
+ }
+ // Demo deliberately cannot assert unique independent community identities.
+ vLog('Community confirmation requested; independent identity not validated');
+ vRender('Confirmation queued, but not counted: this demo cannot verify a different contributor. Real system needs independent accounts and recent road evidence.');
+};
+$('claimRepair').onclick=()=>{
+ if(!v.exists||v.status==='resolved'){vRender('No unresolved hazard to claim repaired.');return}
+ if(v.repairClaim){vRender('Repair claim already pending review.');return}
+ v.repairClaim=true;v.status=v.status==='confirmed'?'disputed':'provisional';vLog('Repair claim submitted; no automatic removal');vRender('Repair claim pending. Hazard remains visible; no automatic deletion.');
+};
+$('reviewRepair').onclick=()=>{
+ if(!v.repairClaim){vRender('No repair claim pending.');return}
+ if($('role').value!=='team'){vRender('Only an authorized reviewer may resolve repair claims. Choose simulated RASS Team to test the review flow.');return}
+ vLog('Team review requested; field evidence not supplied');vRender('Review remains pending: trusted role alone is not evidence of repair. A separate verified field inspection is required.');
+};
+$('resetVerification').onclick=()=>{Object.assign(v,{exists:false,status:'none',confirmations:0,repairClaim:false,history:[],teamConfirmed:false});vRender('Verification scenario reset.');};
+vRender('Choose a contributor role and report a fictional pothole.');
+</script></body></html>
