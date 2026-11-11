@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>RASS! Stationary Alert Lab V2</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#101a21;color:#f5fbfa;font:15px system-ui,Arial}header,.wrap{padding:16px}h1{margin:0;font-size:32px;font-style:italic}h1 span{color:#00c8b4}.sub,small{color:#aac3c9}.card{background:#1b3038;border:1px solid #34515a;border-radius:16px;padding:16px;margin-bottom:13px}.notice{background:#3b302b;border-color:#80644a}.row{display:flex;align-items:center;justify-content:space-between;gap:10px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}button,select{border:0;border-radius:11px;padding:13px 10px;background:#304a53;color:#fff;font:inherit;font-weight:700;width:100%}button.primary{background:#00c8b4;color:#092b28}button:disabled{opacity:.45}label{display:block;margin:12px 0 6px;color:#c4d6d9}input[type=range]{width:100%;accent-color:#00c8b4}.big{font-size:29px;font-weight:800;margin:8px 0}.status{color:#7be4d3}#road{height:160px;position:relative;overflow:hidden;background:linear-gradient(90deg,#203d34 0 18%,#343d42 18% 82%,#203d34 82%);border-radius:14px;margin:14px 0}#road:before,#road:after{content:"";position:absolute;left:49%;width:4px;height:100%;background:repeating-linear-gradient(to bottom,#d6cfa0 0 20px,transparent 20px 42px)}#road:after{left:25%;width:2px;background:#c9c9bd}#car{position:absolute;bottom:15px;left:40%;font-size:36px}#hazard{position:absolute;top:20px;left:59%;font-size:29px}#log{white-space:pre-wrap;font-size:12px;line-height:1.6;max-height:230px;overflow:auto;color:#c9dadd}.pill{padding:5px 10px;border:1px solid #3d6d67;border-radius:30px;color:#87e7d9;font-size:11px}p{line-height:1.5;color:#c1d2d6}
+</style></head><body>
+<header><div class="row"><div><h1>RASS<span>!</span></h1><small>JUST DRIVE · STATIONARY ALERT LAB V2</small></div><span class="pill">SIMULATION ONLY</span></div></header>
+<div class="wrap">
+<div class="card notice"><b>Safe stationary test</b><p>All hazards and movement in this lab are fictional. Your phone does not need to move. This test does not publish anything, access Supabase, or provide actual driving warnings.</p></div>
+<div class="card"><div class="row"><b>Choose hazard</b><span class="pill" id="phase">READY</span></div><label for="type">Hazard classification</label><select id="type"><option value="crater">Crater</option><option value="dig_out">Dig Out</option><option value="bumpy_ride">Bumpy Ride</option><option value="dilly_dally">Dilly Dally</option><option value="flood_watch">Flood Watch</option><option value="no_passage">No Passage</option></select><label for="speed">Simulated speed: <strong id="speedValue">50 km/h</strong></label><input id="speed" type="range" min="20" max="100" step="10" value="50"><div id="road"><span id="hazard">⚠️</span><span id="car">🚙</span></div><div class="grid"><div><small>Distance to hazard</small><div class="big" id="distance">500 m</div></div><div><small>Warning threshold</small><div class="big" id="threshold">180 m</div></div></div><p class="status" id="message">Ready to simulate an approach.</p><div class="grid"><button class="primary" id="start">▶ Start simulation</button><button id="pause" disabled>Ⅱ Pause</button><button id="reset">↺ Reset</button><button id="voiceTest">🔊 Test voice</button></div><label><input type="checkbox" id="voice" checked> Voice alerts ON</label></div>
+<div class="card"><div class="row"><b>Alert diagnostics</b><span class="pill" id="count">0 spoken</span></div><p id="log">Waiting for simulation…</p></div>
+</div><script>
+'use strict';
+const $=id=>document.getElementById(id);
+const hazards={
+ crater:{label:'Crater',message:'Warning. Crater ahead. Slow down.',threshold:210},
+ dig_out:{label:'Dig Out',message:'Caution. Dig Out ahead. Slow down.',threshold:180},
+ bumpy_ride:{label:'Bumpy Ride',message:'Bumpy Ride ahead. Reduce speed.',threshold:140},
+ dilly_dally:{label:'Dilly Dally',message:'Uneven road ahead. Drive carefully.',threshold:120},
+ flood_watch:{label:'Flood Watch',message:'Flood Watch ahead. Do not enter flooded roads.',threshold:250},
+ no_passage:{label:'No Passage',message:'Warning. No Passage ahead. Do not proceed.',threshold:300}
+};
+let remaining=500,timer=null,lastTick=0,announced=false,spoken=0,audioEnabled=false;
+function write(message){$('log').textContent=new Date().toLocaleTimeString()+' · '+message+'\n'+$('log').textContent.slice(0,1600)}
+function speak(message){if(!$('voice').checked){write('Voice muted; alert still logged');return}if(!('speechSynthesis' in window)){write('Speech not supported on this browser');return}window.speechSynthesis.cancel();const utterance=new SpeechSynthesisUtterance(message);utterance.lang='en-US';utterance.rate=.95;utterance.onerror=e=>write('Speech issue: '+e.error);window.speechSynthesis.speak(utterance)}
+function config(){const h=hazards[$('type').value];const speed=Number($('speed').value);return {...h,speed,trigger:Math.max(h.threshold,Math.round(speed*3.6))}}
+function render(){const c=config();$('speedValue').textContent=c.speed+' km/h';$('distance').textContent=Math.round(remaining)+' m';$('threshold').textContent=c.trigger+' m';$('count').textContent=spoken+' spoken';const progress=Math.min(1,Math.max(0,1-remaining/500));$('hazard').style.top=(20+progress*95)+'px';$('phase').textContent=remaining<=0?'PASSED':announced?'WARNED':timer?'APPROACHING':'READY'}
+function pause(){if(timer){clearInterval(timer);timer=null}$('start').disabled=false;$('pause').disabled=true;lastTick=0;render()}
+function reset(){pause();remaining=500;announced=false;spoken=0;$('message').textContent='Ready to simulate an approach.';window.speechSynthesis?.cancel();write('Simulation reset; no database changes');render()}
+function step(){const now=performance.now();const delta=Math.min((now-lastTick)/1000,0.5);lastTick=now;const c=config();remaining=Math.max(0,remaining-c.speed/3.6*delta);if(!announced&&remaining<=c.trigger){announced=true;spoken++;$('message').textContent='🔊 '+c.message;write('TRIGGERED: '+c.label+' at '+Math.round(remaining)+' m, speed '+c.speed+' km/h.');speak(c.message)}if(remaining<=0){pause();$('message').textContent='Hazard passed. '+spoken+' alert(s) triggered.';write('Simulation completed. Alert count: '+spoken)}render()}
+$('start').onclick=()=>{if(remaining<=0)reset();audioEnabled=true;window.speechSynthesis?.getVoices();if(timer)return;lastTick=performance.now();timer=setInterval(step,100);$('start').disabled=true;$('pause').disabled=false;$('message').textContent='Simulated vehicle approaching…';write('Started '+config().label+' approach; simulated speed '+config().speed+' km/h');render()};
+$('pause').onclick=()=>{pause();write('Simulation paused')};$('reset').onclick=reset;
+$('voiceTest').onclick=()=>{audioEnabled=true;speak('RASS test. Road alerts are ready.');write('Voice test requested')};
+$('type').onchange=()=>{reset();write('Selected '+config().label)};$('speed').oninput=render;
+window.addEventListener('pagehide',pause);render();
+</script></body></html>
