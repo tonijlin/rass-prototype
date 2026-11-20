@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RASS! Desktop Feed Verification</title>
+<style>
+:root{color-scheme:dark}body{margin:0;background:#081319;color:#eff9f9;font:15px system-ui,sans-serif}
+main{max-width:900px;margin:48px auto;padding:0 22px}h1{font-size:32px;margin-bottom:4px}b.accent{color:#36e1c9}
+p,.muted{color:#9eb5bd;line-height:1.5}.panel{border:1px solid #2a414a;background:#10232c;padding:20px;border-radius:15px;margin-top:22px}
+button{background:#36e1c9;color:#052325;border:0;border-radius:10px;padding:12px 17px;font-weight:800;cursor:pointer;margin-right:9px}
+button:disabled{opacity:.5;cursor:wait}.secondary{background:#28434a;color:white}
+table{border-collapse:collapse;width:100%;margin-top:15px;font-size:13px}td,th{text-align:left;border-bottom:1px solid #2a414a;padding:12px 6px;overflow-wrap:anywhere}
+.status{font-weight:700}.good{color:#62e6bb}.bad{color:#ffaaa1}.note{font-size:12px}
+</style></head><body><main><h1>RASS<b class="accent">!</b> Desktop Verification</h1>
+<p>Read-only diagnostic for the real published hazard feed. No GPS, no new reports, no changes to Supabase.</p>
+<section class="panel"><h2>1 · Public feed connection</h2><button id="check">Check live feed</button>
+<div id="status" class="status" aria-live="polite">Not checked yet</div><div id="results"></div></section>
+<section class="panel"><h2>2 · Rocky Road audio compatibility</h2>
+<p>This preview uses the same Rocky Road warning text as Just Drive V5.15. It is a stationary audio check, not a test of GPS proximity or driving-direction logic.</p>
+<button id="audio" class="secondary" disabled>Play Rocky Road warning</button><p id="audioStatus" class="note">Available after a matching live hazard is retrieved.</p></section>
+<p class="note">Only the browser's public RPC call is checked here. Team authentication, GPS, automatic warning triggers and publication actions are not tested.</p>
+</main><script>
+'use strict';
+const SB='https://hwoqolkmfyvxddyvpasm.supabase.co',KEY='sb_publishable_Xpm78JqqmovaIi6nPzrRCg_9q0NWa2Z';
+const expected='6a11d29f-c9d9-4c3f-b2a4-446aab40d723';
+const warning='Rough stone surface ahead. Slow down.';
+const status=document.getElementById('status'),results=document.getElementById('results'),audio=document.getElementById('audio');
+const safe=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+document.getElementById('check').onclick=async()=>{
+ const button=document.getElementById('check');button.disabled=true;audio.disabled=true;
+ status.className='status';status.textContent='Checking browser-to-Supabase connection…';results.textContent='';
+ try{
+  const r=await fetch(SB+'/rest/v1/rpc/rass_get_map_hazards',{method:'POST',headers:{apikey:KEY,'Content-Type':'application/json'},body:'{}',cache:'no-store'});
+  if(!r.ok)throw Error('HTTP '+r.status+' — '+(await r.text()).slice(0,180));
+  const rows=await r.json();if(!Array.isArray(rows))throw Error('Unexpected feed response format');
+  const match=rows.find(x=>x.id===expected);
+  status.className='status '+(match?.classification==='rocky_road'&&match?.status==='confirmed'?'good':'bad');
+  status.textContent=match?.classification==='rocky_road'&&match?.status==='confirmed'?
+   'PASS — Live browser feed returns the confirmed Rocky Road hazard':
+   'CHECK NEEDED — The expected confirmed Rocky Road record was not returned';
+  results.innerHTML='<p>Feed records returned: '+rows.length+'</p>'+
+    '<table><thead><tr><th>ID</th><th>Classification</th><th>Status</th><th>Latitude</th><th>Longitude</th></tr></thead><tbody>'+
+    rows.map(x=>'<tr><td>'+safe(x.id)+'</td><td>'+safe(x.classification)+'</td><td>'+safe(x.status)+'</td><td>'+safe(x.latitude)+'</td><td>'+safe(x.longitude)+'</td></tr>').join('')+'</tbody></table>';
+  audio.disabled=!(match?.classification==='rocky_road'&&match?.status==='confirmed');
+  document.getElementById('audioStatus').textContent=audio.disabled?'Audio preview locked until the expected live record is found.':'Ready for optional audio preview.';
+ }catch(e){status.className='status bad';status.textContent='Connection check failed: '+e.message}
+ finally{button.disabled=false}
+};
+audio.onclick=()=>{
+ if(!('speechSynthesis' in window)){document.getElementById('audioStatus').textContent='Speech synthesis is unavailable in this browser.';return}
+ speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(warning);u.lang='en-US';u.rate=.95;
+ speechSynthesis.speak(u);document.getElementById('audioStatus').textContent='Requested audio preview: '+warning;
+};
+</script></body></html>
